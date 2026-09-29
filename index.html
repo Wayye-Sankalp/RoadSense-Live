@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart City Command Center & Citizen Safety Portal</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Leaflet CSS for Maps -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Google Fonts Inter -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        darkbg: '#0a0f1d',
+                        glasscard: 'rgba(15, 23, 42, 0.75)',
+                        glassborder: 'rgba(255, 255, 255, 0.1)',
+                        emeraldaccent: '#10b981',
+                        hazardred: '#ef4444',
+                        electricblue: '#3b82f6',
+                        warningyellow: '#f59e0b'
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif']
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        body {
+            background-color: #0a0f1d;
+            color: #f8fafc;
+            font-family: 'Inter', sans-serif;
+            overflow-x: hidden;
+        }
+
+        .glass-panel {
+            background: rgba(15, 23, 42, 0.82);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+        }
+
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: rgba(15, 23, 42, 0.6);
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #334155;
+            border-radius: 4px;
+        }
+
+        .leaflet-container {
+            background-color: #0f172a !important;
+            border-radius: 0.75rem;
+        }
+
+        @keyframes pulse-glow {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.5; transform: scale(1.15); }
+        }
+
+        .pulsate-dot {
+            animation: pulse-glow 2s infinite ease-in-out;
+        }
+
+        .custom-map-marker {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+            color: white;
+            box-shadow: 0 0 12px rgba(0,0,0,0.6);
+        }
+
+        @keyframes alert-flash {
+            0% { background-color: rgba(239, 68, 68, 0.4); }
+            100% { background-color: rgba(15, 23, 42, 0.82); }
+        }
+        .trigger-active {
+            animation: alert-flash 1s ease-out;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col justify-between">
+
+    <!-- HEADER NAVBAR -->
+    <header class="glass-panel sticky top-0 z-50 px-4 lg:px-8 py-3.5 border-b border-glassborder flex flex-wrap items-center justify-between gap-4">
+        <div class="flex items-center space-x-3.5">
+            <div class="p-2.5 bg-blue-600/20 rounded-xl border border-blue-500/30 text-electricblue flex items-center justify-center">
+                <i class="fa-solid fa-city text-xl"></i>
+            </div>
+            <div>
+                <h1 class="text-lg lg:text-xl font-extrabold tracking-wide text-white flex items-center gap-2">
+                    SMART CITY <span class="text-electricblue">COMMAND CENTER</span>
+                </h1>
+                <p class="text-xs text-slate-400 font-medium">Road Health Monitoring & Citizen Safety Portal</p>
+            </div>
+        </div>
+
+        <!-- Role Switcher & Status -->
+        <div class="flex items-center flex-wrap gap-4">
+            <div class="bg-slate-900/90 p-1 rounded-xl border border-slate-700/60 flex items-center">
+                <button id="btn-govt-view" onclick="switchView('govt')" class="px-3.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-2 transition-all duration-200 bg-electricblue text-white shadow-lg">
+                    <i class="fa-solid fa-building-shield"></i> PWD / Govt Portal
+                </button>
+                <button id="btn-citizen-view" onclick="switchView('citizen')" class="px-3.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-2 text-slate-400 hover:text-white transition-all duration-200">
+                    <i class="fa-solid fa-mobile-screen-button"></i> Citizen Portal
+                </button>
+            </div>
+
+            <div id="ws-status-badge" class="hidden sm:flex items-center gap-2.5 px-3 py-1.5 rounded-xl bg-emerald-950/50 border border-emerald-500/30 text-emerald-400 text-xs font-semibold">
+                <span id="ws-status-dot" class="w-2.5 h-2.5 rounded-full bg-emerald-500 pulsate-dot"></span>
+                <span id="ws-status-text">WS CONNECTED (8000)</span>
+            </div>
+        </div>
+    </header>
+
+    <!-- MAIN CONTENT -->
+    <main class="flex-1 p-4 lg:p-6 grid grid-cols-1 lg:grid-cols-12 gap-5 max-w-[1920px] mx-auto w-full">
+
+        <!-- PANEL 1: FEEDS & REPORTING -->
+        <section class="lg:col-span-3 flex flex-col gap-4">
+            <div class="glass-panel p-1.5 rounded-xl flex items-center justify-between">
+                <button id="tab-detections" onclick="switchLeftTab('detections')" class="flex-1 py-2 rounded-lg text-xs font-bold text-center bg-slate-800 text-electricblue border border-blue-500/30 transition-all">
+                    <i class="fa-solid fa-satellite-dish mr-1"></i> Live AI Feeds
+                </button>
+                <button id="tab-report" onclick="switchLeftTab('report')" class="flex-1 py-2 rounded-lg text-xs font-bold text-center text-slate-400 hover:text-white transition-all">
+                    <i class="fa-solid fa-bullhorn mr-1"></i> Citizen Report
+                </button>
+            </div>
+
+            <!-- STREAM FEED -->
+            <div id="feed-detections-container" class="glass-panel p-4 rounded-2xl flex-1 flex flex-col min-h-[500px]">
+                <div class="flex items-center justify-between mb-3 border-b border-slate-800 pb-2">
+                    <div class="flex items-center gap-2">
+                        <i class="fa-solid fa-triangle-exclamation text-warningyellow text-sm"></i>
+                        <h2 class="text-xs font-bold uppercase tracking-wider text-slate-300">Hazard Stream Feed</h2>
+                    </div>
+                    <span id="alert-counter-badge" class="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-rose-500/20 text-rose-400 border border-rose-500/30">
+                        3 ACTIVE
+                    </span>
+                </div>
+                <div id="detection-feed-list" class="space-y-3 overflow-y-auto max-h-[560px] pr-1 flex-1"></div>
+            </div>
+
+            <!-- CITIZEN REPORT FORM -->
+            <div id="feed-report-container" class="glass-panel p-4 rounded-2xl flex-1 flex-col hidden">
+                <div class="flex items-center gap-2 mb-3 border-b border-slate-800 pb-2">
+                    <i class="fa-solid fa-camera-retro text-electricblue text-sm"></i>
+                    <h2 class="text-xs font-bold uppercase tracking-wider text-slate-300">Report Road Hazard</h2>
+                </div>
+
+                <form id="citizen-report-form" onsubmit="handleCitizenSubmit(event)" class="space-y-3 text-xs flex-1 flex flex-col justify-between">
+                    <div>
+                        <label class="block text-slate-400 font-semibold mb-1">Hazard Category</label>
+                        <select id="report-category" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-slate-200 focus:border-electricblue outline-none" required>
+                            <option value="Potholes">🕳️ Potholes / Deep Pit</option>
+                            <option value="Road Cracks">⚡ Road Cracks & Fissures</option>
+                            <option value="Damaged Traffic Signal">🚦 Broken Traffic Signal</option>
+                            <option value="Missing Streetlight">💡 Missing Streetlight</option>
+                            <option value="Waterlogging">🌧️ Waterlogging</option>
+                        </select>
+                    </div>
+
+                    <div>
+                        <label class="block text-slate-400 font-semibold mb-1">Upload Photo/Video Proof</label>
+                        <div class="border-2 border-dashed border-slate-700 hover:border-electricblue rounded-lg p-3 text-center cursor-pointer bg-slate-900/50" onclick="document.getElementById('report-file').click()">
+                            <i class="fa-solid fa-cloud-arrow-up text-2xl text-slate-500 mb-1"></i>
+                            <p class="text-[11px] text-slate-400">Click to upload image or video</p>
+                            <p id="file-chosen-text" class="text-[10px] text-electricblue mt-1 font-semibold"></p>
+                            <input type="file" id="report-file" accept="image/*,video/*" class="hidden" onchange="updateFileName(this)">
+                        </div>
+                    </div>
+
+                    <div>
+                        <label class="block text-slate-400 font-semibold mb-1">Location Address / Live GPS</label>
+                        <div class="relative">
+                            <input type="text" id="report-location" placeholder="Click target icon for Live GPS" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 pr-8 text-slate-200 focus:border-electricblue outline-none" required>
+                            <button type="button" onclick="autoDetectLocation()" title="Detect current live GPS location" class="absolute right-2 top-2.5 text-electricblue hover:text-blue-400">
+                                <i class="fa-solid fa-location-crosshairs text-base"></i>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div>
+                        <label class="block text-slate-400 font-semibold mb-1">Description / Notes</label>
+                        <textarea id="report-desc" rows="2" placeholder="Brief details about hazard..." class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-slate-200 focus:border-electricblue outline-none"></textarea>
+                    </div>
+
+                    <button type="submit" class="w-full py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 text-white font-bold rounded-xl shadow-lg flex items-center justify-center gap-2 mt-2">
+                        <i class="fa-solid fa-paper-plane"></i> Submit Hazard Report
+                    </button>
+                </form>
+            </div>
+        </section>
+
+        <!-- PANEL 2: MAP CENTER -->
+        <section class="lg:col-span-6 flex flex-col gap-4">
+            <div id="map-panel-box" class="glass-panel p-4 rounded-2xl flex-1 flex flex-col min-h-[550px]">
+                <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+                    <div class="flex items-center gap-2">
+                        <i class="fa-solid fa-map-location-dot text-electricblue"></i>
+                        <h2 class="text-xs font-bold uppercase tracking-wider text-slate-200">Live Spatial Hazard & GPS Tracker</h2>
+                    </div>
+                </div>
+
+                <!-- Leaflet Container -->
+                <div id="map" class="w-full flex-1 rounded-xl min-h-[420px] z-10 border border-slate-800"></div>
+            </div>
+        </section>
+
+        <!-- PANEL 3: HEALTH & ANALYTICS -->
+        <section class="lg:col-span-3 flex flex-col gap-4">
+            <div class="glass-panel p-4 rounded-2xl flex flex-col items-center justify-center text-center">
+                <span class="text-[11px] font-extrabold uppercase tracking-widest text-slate-400 mb-1">
+                    Digital Road Health Index
+                </span>
+                <div class="relative w-36 h-36 flex items-center justify-center my-2">
+                    <svg class="w-full h-full transform -rotate-90" viewBox="0 0 36 36">
+                        <path class="text-slate-800" stroke-width="3.5" stroke="currentColor" fill="none" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+                        <path id="health-gauge-circle" class="text-amber-500 transition-all duration-1000 ease-out" stroke-dasharray="68, 100" stroke-width="3.5" stroke-linecap="round" stroke="currentColor" fill="none" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+                    </svg>
+                    <div class="absolute flex flex-col items-center">
+                        <span id="health-score-val" class="text-3xl font-black text-white">68</span>
+                        <span id="health-score-status" class="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-500/20 text-amber-400 border border-amber-500/30 uppercase mt-0.5">
+                            Needs Attention
+                        </span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="glass-panel p-4 rounded-2xl flex-1 space-y-3">
+                <h3 class="text-xs font-bold uppercase tracking-wider text-slate-300 border-b border-slate-800 pb-2">
+                    System Metrics
+                </h3>
+                <div class="space-y-2.5 text-xs">
+                    <div class="flex items-center justify-between p-2 rounded-lg bg-slate-900/60 border border-slate-800">
+                        <span class="text-slate-400">Total Hazards Detected</span>
+                        <span id="metric-total-hazards" class="font-bold text-white">3</span>
+                    </div>
+                    <div class="flex items-center justify-between p-2 rounded-lg bg-slate-900/60 border border-slate-800">
+                        <span class="text-slate-400">Status</span>
+                        <span class="font-bold text-emerald-400">Live Active</span>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <script>
+        // Global variables for Real GPS
+        window.currentUserLat = null;
+        window.currentUserLng = null;
+
+        let map, markersLayerGroup;
+
+        const HAZARD_CONFIG = {
+            'Potholes': { icon: 'fa-triangle-exclamation', color: '#ef4444' },
+            'Road Cracks': { icon: 'fa-bolt', color: '#f59e0b' },
+            'Waterlogging': { icon: 'fa-cloud-showers-heavy', color: '#3b82f6' },
+            'Damaged Traffic Signal': { icon: 'fa-traffic-light', color: '#f59e0b' },
+            'Missing Streetlight': { icon: 'fa-lightbulb', color: '#eab308' },
+            'DEFAULT': { icon: 'fa-triangle-exclamation', color: '#ef4444' }
+        };
+
+        let hazardData = [
+            {
+                id: 'HAZ-101',
+                type: 'Potholes',
+                vehicle: 'BUS-MH12-LIVE',
+                locationName: 'Shaniwar Peth',
+                lat: 18.5196,
+                lng: 73.8553,
+                time: '2:58 PM',
+                confidence: 89,
+                source: 'BUS_AI',
+                status: 'OPEN',
+                icon: 'fa-triangle-exclamation',
+                color: '#ef4444'
+            }
+        ];
+
+        window.onload = function() {
+            initMap();
+            renderFeed();
+            initWebSocket();
+        };
+
+        function initMap() {
+            map = L.map('map', { zoomControl: true }).setView([18.5196, 73.8553], 13);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
+            markersLayerGroup = L.layerGroup().addTo(map);
+            renderMapMarkers();
+        }
+
+        // ==========================================
+        // REAL-TIME GPS GEOLOCATION ENGINE
+        // ==========================================
+        function autoDetectLocation() {
+            const locInput = document.getElementById('report-location');
+            locInput.value = 'Locating live GPS...';
+
+            if ("geolocation" in navigator) {
+                navigator.geolocation.getCurrentPosition(
+                    (position) => {
+                        const lat = position.coords.latitude;
+                        const lng = position.coords.longitude;
+                        
+                        // Save globally
+                        window.currentUserLat = lat;
+                        window.currentUserLng = lng;
+
+                        locInput.value = `Live GPS: [${lat.toFixed(4)}, ${lng.toFixed(4)}]`;
+                        
+                        // Pan Map to user location
+                        if (map) {
+                            map.setView([lat, lng], 16);
+                            
+                            const userIcon = L.divIcon({
+                                html: `<div class="custom-map-marker" style="background-color: #10b981; width: 34px; height: 34px; border: 2px solid white;">
+                                        <i class="fa-solid fa-user text-sm"></i>
+                                       </div>`,
+                                className: '',
+                                iconSize: [34, 34],
+                                iconAnchor: [17, 17]
+                            });
+
+                            L.marker([lat, lng], { icon: userIcon })
+                             .addTo(markersLayerGroup)
+                             .bindPopup("<b>📍 Aapki Exact Live Location</b>").openPopup();
+                        }
+                    },
+                    (error) => {
+                        console.error(error);
+                        locInput.value = 'GPS Access Denied';
+                        alert('Kripya browser me Location permission Allow karein!');
+                    },
+                    { enableHighAccuracy: true, timeout: 10000 }
+                );
+            } else {
+                alert("Aapke device me Geolocation/GPS supported nahi hai.");
+            }
+        }
+
+        function handleCitizenSubmit(e) {
+            e.preventDefault();
+            const category = document.getElementById('report-category').value;
+            const locationText = document.getElementById('report-location').value;
+
+            // Use live GPS if captured, else default fallback
+            const lat = window.currentUserLat || 18.5200;
+            const lng = window.currentUserLng || 73.8500;
+
+            triggerLiveDashboardUpdate({
+                hazard_type: category,
+                location: { lat: lat, lng: lng },
+                location_name: locationText,
+                confidence: 95,
+                bus_id: "CITIZEN-APP",
+                timestamp: new Date().toLocaleTimeString()
+            });
+
+            alert('✅ Citizen Report Live Location ke saath submit ho gayi!');
+            document.getElementById('citizen-report-form').reset();
+            document.getElementById('file-chosen-text').innerText = '';
+            switchLeftTab('detections');
+        }
+
+        function renderMapMarkers() {
+            markersLayerGroup.clearLayers();
+            hazardData.forEach(item => {
+                const customHtml = `
+                    <div class="custom-map-marker" style="background-color: ${item.color}; width: 32px; height: 32px;">
+                        <i class="fa-solid ${item.icon} text-sm"></i>
+                    </div>
+                `;
+                const icon = L.divIcon({ html: customHtml, className: '', iconSize: [32, 32], iconAnchor: [16, 16] });
+
+                L.marker([item.lat, item.lng], { icon: icon })
+                    .bindPopup(`<b>${item.type}</b><br>📍 ${item.locationName}`)
+                    .addTo(markersLayerGroup);
+            });
+        }
+
+        function renderFeed() {
+            const feedContainer = document.getElementById('detection-feed-list');
+            feedContainer.innerHTML = '';
+            document.getElementById('alert-counter-badge').innerText = `${hazardData.length} ACTIVE`;
+
+            hazardData.forEach(item => {
+                const card = document.createElement('div');
+                card.className = "p-3 rounded-xl border bg-slate-900/90 border-slate-700/80 mb-2";
+                card.innerHTML = `
+                    <div class="flex items-center justify-between mb-1">
+                        <span class="text-xs font-bold text-white"><i class="fa-solid ${item.icon} text-rose-400 mr-1"></i> ${item.type}</span>
+                        <span class="text-[10px] text-slate-400">${item.time}</span>
+                    </div>
+                    <div class="text-[11px] text-slate-300">📍 ${item.locationName}</div>
+                `;
+                feedContainer.appendChild(card);
+            });
+        }
+
+        function triggerLiveDashboardUpdate(data) {
+            const hazardName = data.hazard_type || "Potholes";
+            const config = HAZARD_CONFIG[hazardName] || HAZARD_CONFIG['DEFAULT'];
+
+            const lat = data.location ? data.location.lat : 18.5196;
+            const lng = data.location ? data.location.lng : 73.8553;
+
+            const newDetection = {
+                id: `HAZ-${Math.floor(100 + Math.random() * 900)}`,
+                type: hazardName,
+                vehicle: data.bus_id || "LIVE-STREAM",
+                locationName: data.location_name || `GPS [${lat.toFixed(4)}, ${lng.toFixed(4)}]`,
+                lat: lat,
+                lng: lng,
+                time: data.timestamp || new Date().toLocaleTimeString(),
+                confidence: data.confidence || 90,
+                status: 'OPEN',
+                icon: config.icon,
+                color: config.color
+            };
+
+            hazardData.unshift(newDetection);
+            renderFeed();
+            renderMapMarkers();
+            map.panTo([lat, lng]);
+        }
+
+        function initWebSocket() {
+            const ws = new WebSocket("ws://localhost:8000/ws/live-stream");
+            ws.onmessage = (e) => triggerLiveDashboardUpdate(JSON.parse(e.data));
+        }
+
+        function switchView(mode) {
+            if(mode === 'citizen') switchLeftTab('report');
+            else switchLeftTab('detections');
+        }
+
+        function switchLeftTab(tab) {
+            if (tab === 'detections') {
+                document.getElementById('feed-detections-container').classList.remove('hidden');
+                document.getElementById('feed-report-container').classList.add('hidden');
+            } else {
+                document.getElementById('feed-report-container').classList.remove('hidden');
+                document.getElementById('feed-detections-container').classList.add('hidden');
+            }
+        }
+
+        function updateFileName(input) {
+            if (input.files[0]) document.getElementById('file-chosen-text').innerText = `📁 ${input.files[0].name}`;
+        }
+    </script>
+</body>
+</html>
