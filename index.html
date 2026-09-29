@@ -445,7 +445,7 @@
         }
 
         function initWebSocket() {
-            const ws = new WebSocket("ws://localhost:8000/ws/live-stream");
+          const ws = new WebSocket("wss://roadsense-live.onrender.com/ws/live-stream");
             ws.onmessage = (e) => triggerLiveDashboardUpdate(JSON.parse(e.data));
         }
 
